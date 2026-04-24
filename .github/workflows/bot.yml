@@ -1,36 +1,35 @@
-name: Windows_Automation_GUI
+name: Windows-Project-Runner
 on: workflow_dispatch
 
 jobs:
   build:
     runs-on: windows-latest
     steps:
-      - name: 1. Auto-Install Python & Roblox
-        run: |
-          # Install Python 3.12 Silently
-          Invoke-WebRequest -Uri "https://python.org" -OutFile "python_install.exe"
-          Start-Process -FilePath "python_install.exe" -ArgumentList "/quiet", "PrependPath=1", "InstallAllUsers=1" -Wait
-          
-          # Download Roblox Player to Desktop
-          Invoke-WebRequest -Uri "https://roblox.com" -OutFile "$env:USERPROFILE\Desktop\RobloxInstaller.exe"
-          
-          # Download Mesa3D (Graphics Fix for Roblox)
-          Invoke-WebRequest -Uri "https://github.com" -OutFile "mesa.7z"
-          # Note: Manual extraction of opengl32.dll into Roblox folder is needed once GUI opens
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
 
-      - name: 2. Launch Google Remote Desktop
+      - name: Configure RDP and Tunnel
         run: |
-          # PASTE YOUR GOOGLE TOKEN BELOW (The exact command you copied earlier)
-          $env:CRP_TOKEN='& "${Env:PROGRAMFILES(X86)}\Google\Chrome Remote Desktop\CurrentVersion\remoting_start_host.exe" --code="4/0Aci98E_fkzxQm1RZIuKNW4ubDYagbLxoL8MGLbOD-TVEPJ7ZJt0tnEaoOK8P9-8o69kPnQ" --redirect-url="https://remotedesktop.google.com/_/oauthredirect" --name=$Env:COMPUTERNAME'
+          # Set Password for the runner user
+          net user runneradmin "ProjectPass123!"
           
-          Invoke-WebRequest -Uri https://google.com -OutFile host.msi
-          Start-Process msiexec.exe -Wait -ArgumentList '/i host.msi /qn'
-          & "C:\Program Files (x86)\Google\Chrome Remote Desktop\Service\remoting_start_host.exe" --code="$env:CRP_TOKEN" --redirect-url="https://google.com" --name-prefix=$Env:COMPUTERNAME --pin=123456
-
-      - name: 3. Keep Alive
-        run: |
-          $start = Get-Date
-          while ((Get-Date) -lt $start.AddHours(6)) {
-            Write-Host "Server Active..."
+          # Enable Remote Desktop
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
+          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
+          
+          # Download Cloudflared for the tunnel (No Token Needed)
+          curl -L --output cloudflared.exe https://github.com
+          
+          # Start Tunnel - This generates a random URL for you to connect
+          Start-Process ./cloudflared.exe -ArgumentList "access rdp --hostname ://trycloudflare.com --url rdp://localhost:3389"
+          
+          # Keep the session alive for 6 hours
+          $n = 360
+          do {
+            Write-Host "Server is running... Time remaining: $n minutes"
             Start-Sleep -Seconds 60
-          }
+            $n--
+          } while ($n -gt 0)
