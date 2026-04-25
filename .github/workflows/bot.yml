@@ -1,35 +1,27 @@
-name: Windows-Project-Runner
+name: Free_RDP_No_Tokens
 on: workflow_dispatch
 
 jobs:
   build:
     runs-on: windows-latest
     steps:
-      - name: Setup Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
-
-      - name: Configure RDP and Tunnel
+      - name: Enable RDP
         run: |
-          # Set Password for the runner user
-          net user runneradmin "ProjectPass123!"
-          
-          # Enable Remote Desktop
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
+          net user runneradmin P@ssw0rd123 /add
+          net localgroup administrators runneradmin /add
+
+      - name: Start Cloudflare Quick Tunnel
+        run: |
+          Invoke-WebRequest -Uri https://github.com -OutFile cloudflared.exe
+          # This starts a tunnel without a token
+          Start-Process .\cloudflared.exe -ArgumentList "tunnel --url tcp://localhost:3389"
           
-          # Download Cloudflared for the tunnel (No Token Needed)
-          curl -L --output cloudflared.exe https://github.com
-          
-          # Start Tunnel - This generates a random URL for you to connect
-          Start-Process ./cloudflared.exe -ArgumentList "access rdp --hostname ://trycloudflare.com --url rdp://localhost:3389"
-          
-          # Keep the session alive for 6 hours
-          $n = 360
-          do {
-            Write-Host "Server is running... Time remaining: $n minutes"
+      - name: Keep Alive
+        run: |
+          $start = Get-Date
+          while ((Get-Date) -lt $start.AddHours(6)) {
+            Write-Host "Check the log above for the .trycloudflare.com link!"
             Start-Sleep -Seconds 60
-            $n--
-          } while ($n -gt 0)
+          }
